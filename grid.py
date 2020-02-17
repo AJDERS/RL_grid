@@ -1,16 +1,18 @@
 import numpy as np
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt     
+from matplotlib import colors
+import matplotlib.patches as mpatches
+from copy import deepcopy
 import random as r
 
-# TODO: Better plotting, Indicate if won, lost or out of actions
+# TODO: Better plotting, Indicate if won, lost or out of actions, multiprocess Agent.play(), variable exploration rate.
 
 class State:
     def __init__(self, rows, cols):
         self.rows = rows
         self.cols = cols
-        self.board = np.zeros([rows, cols])
-        
+        self.board = np.zeros([rows, cols])        
         ### Define max capacity.
         self.action_cap = rows*cols
 
@@ -38,12 +40,20 @@ class State:
         
 
     def giveReward(self):
+        map_size = self.rows*self.cols
         if self.state == self.win_state:
-            return self.rows*self.cols
+            return 5*map_size
         elif self.state in self.traps:
-            return -self.rows*self.cols
+            return -map_size
         else:
-            return -0.1
+            try:
+               if self.state in self.state_values:
+                   return -0.1*map_size
+               else:
+                   pass
+            except:
+               pass
+        return 0.0
 
     def nextPosition(self, action):
         if action == "up":
@@ -139,32 +149,81 @@ class Agent:
         self.State.state = (0,0)
         self.State.isEnd = False
 
+    def make_plot_data(self):
+        start = (0,0)
+        stop = self.State.win_state
+        yx_traps = self.State.traps
+        yx_walls = self.State.walls 
+        data = np.zeros((self.rows, self.cols))
+        for i in range(self.rows):
+            for j in range(self.cols):
+                if (i,j) in yx_traps:
+                    data[(i,j)] = -1.9
+                elif (i,j) in yx_walls:
+                    data[(i,j)] = 0.1
+                elif (i,j) == start or (i,j) == stop:
+                    data[(i,j)] = 1.9
+                else:
+                    data[(i,j)] = -0.1
+        frames = []
+        i=0
+        for game in self.games[::1000]:
+            frame = deepcopy(data)
+            for point in game:
+                if (point[0],point[1]) != (0,0):
+                    frame[point[0]][point[1]] = 2.5
+                frames.append((i*1000,deepcopy(frame)))
+            i+=1
+        return frames
+
+
     def plot_paths(self):
-         start = (0,0)
-         stop = self.State.win_state
+        # create discrete colormap
+        colours = ['red', 'white', 'black', 'limegreen', 'cornflowerblue']
+        cmap = colors.ListedColormap(colours)
+        bounds = [-2,-1,0,1,2,3]
+        norm = colors.BoundaryNorm(bounds, cmap.N)
+        patches = []
+        legends = ['Traps', 'Not Visited', 'Walls', 'Start/Finish', 'Agent path']
+ 
+        for i,_ in enumerate(colours):
+            patch = mpatches.Patch(color=colours[i], label=legends[i])
+            patches.append(patch)
 
-         x_traps = [point[1] for point in self.State.traps]
-         y_traps = [point[0] for point in self.State.traps]
+        frames = self.make_plot_data()
+        finished_frames = []
+        for frame in tqdm(frames):
+            fig, ax = plt.subplots()
+            fig.set_size_inches(7.5,5) 
+            ax.imshow(frame[1], cmap=cmap, norm=norm)
 
-         x_walls = [point[1] for point in self.State.walls]
-         y_walls = [point[0] for point in self.State.walls]
+            # draw gridlines
+            ax.grid(which='both', axis='both', linestyle='-', color='k', linewidth=2)
+            ax.set_xticks(np.arange(-.5, 10, 1))
+            ax.set_yticks(np.arange(-.5, 10, 1))
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])                               
+            plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+            plt.title('Path for game {} out of {}.'.format(frame[0], len(self.games)))
+            fig.canvas.draw()
+            image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
+            image  = image.reshape(fig.canvas.get_width_height()[::-1] + (3,)) 
+            finished_frames.append(image)
+            plt.close()
+        return finished_frames
+             
 
-         fig = plt.figure(figsize=(8,8),dpi=200)
-         ax = fig.add_subplot(111)
+         #fig = plt.figure(figsize=(8,8),dpi=100)
+         #ax = fig.add_subplot(111)
          
-         for game in tqdm(self.games):
-            y = [0]+[point[0] for point in game]
-            x = [0]+[point[1] for point in game]
-            ax.plot(x, y, c='blue', ms=0.1, alpha=(2/float(len(self.games))),ls='-');
-         
-         ax.plot(x_traps, y_traps, c='red', linestyle="None", marker='x')
-         ax.plot(x_walls, y_walls, c='black', linestyle="None", marker='s')
-         ax.plot(start[1], start[0],c='green', ms=10.0, marker='o')
-         ax.plot(stop[1], stop[0],c='green', ms=15.0, marker='*')
-         ax.set(xlim=(-0.5, self.State.cols+.5),ylim=(-.5,self.State.rows+.5))
-         spacing = 1         
-         minorLocator = plt.MultipleLocator(spacing)
-         ax.yaxis.set_minor_locator(minorLocator)
-         ax.xaxis.set_minor_locator(minorLocator)
-         ax.grid(which = 'minor')
-         plt.savefig('test_plot.png',dpi=250)
+         #ax.plot(x_traps, y_traps, c='red', linestyle="None", marker='x')
+         #ax.plot(x_walls, y_walls, c='black', linestyle="None", marker='s')
+         #ax.plot(start[1], start[0],c='green', ms=5.0, marker='o')
+         #ax.plot(stop[1], stop[0],c='green', ms=7.5, marker='*')
+         #ax.set(xlim=(-0.5, self.State.cols+.5),ylim=(-.5,self.State.rows+.5))
+         #spacing = 1         
+         #minorLocator = plt.MultipleLocator(spacing)
+         #ax.yaxis.set_minor_locator(minorLocator)
+         #ax.xaxis.set_minor_locator(minorLocator)
+         #ax.grid(which = 'minor')
+           
